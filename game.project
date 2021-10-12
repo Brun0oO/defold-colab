@@ -1,0 +1,58 @@
+[project]
+title = defold-colab
+custom_resources = /assets/res
+dependencies#0 = https://github.com/Insality/druid/archive/master.zip
+dependencies#1 = https://github.com/defold/extension-webview/archive/master.zip
+dependencies#2 = https://github.com/britzl/monarch/archive/master.zip
+dependencies#3 = https://github.com/defold/extension-qrcode/archive/1.1.zip
+dependencies#4 = https://github.com/defold/extension-camera/archive/master.zip
+dependencies#5 = https://github.com/selimanac/defold-uuid4/archive/master.zip
+dependencies#6 = https://github.com/britzl/defold-png/archive/master.zip
+dependencies#7 = https://github.com/subsoap/defsave/archive/master.zip
+
+[bootstrap]
+main_collection = /main/main.collectionc
+
+[input]
+game_binding = /input/game.input_bindingc
+use_accelerometer = 0
+
+[display]
+width = 640
+height = 1136
+display_profiles = /builtins/render/default.display_profilesc
+
+[ios]
+app_icon_120x120 = /assets/app_icons/icon_120.png
+app_icon_180x180 = /assets/app_icons/icon_180.png
+app_icon_76x76 = /assets/app_icons/icon_76.png
+app_icon_152x152 = /assets/app_icons/icon_152.png
+app_icon_57x57 = /assets/app_icons/icon_57.png
+app_icon_114x114 = /assets/app_icons/icon_114.png
+app_icon_72x72 = /assets/app_icons/icon_72.png
+app_icon_144x144 = /assets/app_icons/icon_144.png
+app_icon_167x167 = /assets/app_icons/icon_167.png
+bundle_identifier = com.brun0oO.signapp
+bundle_name = signapp
+infoplist = /manifests/ios/Info.plist
+
+[osx]
+bundle_identifier = com.example.todo
+infoplist = /builtins/manifests/osx/Info.plist
+
+[android]
+app_icon_36x36 = /assets/app_icons/icon_36.png
+app_icon_48x48 = /assets/app_icons/icon_48.png
+app_icon_72x72 = /assets/app_icons/icon_72.png
+app_icon_96x96 = /assets/app_icons/icon_96.png
+app_icon_144x144 = /assets/app_icons/icon_144.png
+app_icon_192x192 = /assets/app_icons/icon_192.png
+input_method = HiddenInputField
+
+[script]
+shared_state = 1
+
+[physics]
+gravity_y = -1000.0
+scale = 0.01
+

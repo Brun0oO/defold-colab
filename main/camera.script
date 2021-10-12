@@ -1,0 +1,101 @@
+local function start_scan(self)
+	if camera ~= nil then
+		local sysinfo = sys.get_sys_info()
+
+		local quality = camera.CAPTURE_QUALITY_HIGH
+		local type = camera.CAMERA_TYPE_FRONT
+		self.flip = 0
+		if sysinfo.system_name == 'iPhone OS' or sysinfo.system_name == 'Android' then
+			type = camera.CAMERA_TYPE_BACK
+			quality = camera.CAPTURE_QUALITY_MEDIUM
+			self.flip = 1
+		end
+
+		camera.start_capture(type, quality, function(self,status) 
+			if status == camera.CAMERA_STARTED then
+				self.cameraframe = camera.get_frame()
+				self.camerainfo = camera.get_info()
+				print("Initialized camera")
+				self.cameratextureheader = {width=self.camerainfo.width,
+				height=self.camerainfo.height,
+				type=resource.TEXTURE_TYPE_2D,
+				format=resource.TEXTURE_FORMAT_RGB,
+				num_mip_maps=1 }
+				msg.post("scan:/interface#scan", "camera_on", {width=self.camerainfo.width,
+				height=self.camerainfo.height})
+			elseif status == camera.CAMERA_STOPPED then
+				msg.post("scan:/interface#scan", "camera_off")
+			elseif status == camera.CAMERA_ERROR then
+				msg.post("scan:/interface#scan", "camera_err")
+			end
+		end)
+	end
+end
+
+local function end_scan(self)
+	print("end_scan")
+	if self.cameraframe ~= nil then
+		self.cameraframe = nil
+		print("camera.stop_capture")
+		camera.stop_capture()
+		self.first = 0
+	end
+end
+
+local function update_scan(self)
+	if self.cameraframe ~= nil then
+		local texturepath = go.get("#sprite", "texture0")
+		resource.set_texture(texturepath, self.cameratextureheader, self.cameraframe)
+		local text = qrcode.scan(self.cameraframe, self.camerainfo.width, self.camerainfo.height, self.flip)
+		if text ~= nil then
+			msg.post("scan:/interface#scan", "qrcode", {value=text})
+		end
+	end
+end
+
+
+
+
+function init(self)
+	local logosize = 128
+	local screen_width = sys.get_config("display.width", 600)
+	local screen_height = sys.get_config("display.height", 800)
+	local scale_width = screen_width / logosize
+	local scale_height = screen_height / logosize
+
+	go.set("#sprite", "scale", vmath.vector3(scale_width, scale_height, 1) )
+	
+	start_scan(self)
+end
+
+function final(self)
+	end_scan(self)
+end
+
+function update(self, dt)
+	update_scan(self)
+end
+
+function on_message(self, message_id, message, sender)
+	-- Add message-handling code here
+	-- Learn more: https://defold.com/manuals/message-passing/
+	-- Remove this function if not needed
+end
+
+function on_input(self, action_id, action)
+	-- Add input-handling code here. The game object this script is attached to
+	-- must have acquired input focus:
+	--
+	--    msg.post(".", "acquire_input_focus")
+	--
+	-- All mapped input bindings will be received. Mouse and touch input will
+	-- be received regardless of where on the screen it happened.
+	-- Learn more: https://defold.com/manuals/input/
+	-- Remove this function if not needed
+end
+
+function on_reload(self)
+	-- Add reload-handling code here
+	-- Learn more: https://defold.com/manuals/hot-reload/
+	-- Remove this function if not needed
+end

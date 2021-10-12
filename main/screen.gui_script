@@ -1,0 +1,364 @@
+local monarch = require("monarch.monarch")
+local druid = require("druid.druid")
+local default_style = require("druid.styles.default.style")
+local base64 = require("main.base64")
+local tool = require("main.tool")
+local dkjson = require("main.dkjson")
+local path = require("main.path")
+local defsave = require("defsave.defsave")
+
+
+local function webview_set_position(self)
+	webview.set_position(self.webview_id, 0, 0, -1, 40)
+end
+
+local function on_window_callback(self, event, data)
+	if event == window.WINDOW_EVENT_RESIZED then
+		webview_set_position(self)
+	end
+	druid.on_window_callback(event, data)
+end
+
+-- display the scan page to obtain the url of the colab server using a qrcode
+local function button_colab_callback(self)
+	msg.post(".", "show_scan")
+end
+
+-- send a post request to the colab server
+local function handle_analyze_response(self, id, response)
+	if response.status == 200 then
+		local info = json.decode(response.response)
+		self.results:set_to(dkjson.encode(info["result"], {indent=true}))
+	else
+		self.results:set_to("Something went wrong !")
+	end
+	msg.post(".", "spinner", { case = "hide" })
+end
+
+local function button_analyze_picture_callback(self)
+	-- https://www.w3.org/TR/html401/interact/forms.html#h-17.13.4
+	local filename = self.picture_id
+	local boundary = uuid4.generate()
+	local contents = self.picture_bin
+	local mime = self.picture_mime
+	local headers = {
+		["Content-Type"] = "multipart/form-data; boundary="..boundary
+	}
+	local body = "--"..boundary..
+	'\r\nContent-Disposition: form-data; name="image"; filename="'..filename..'"'..
+	'\r\nContent-type: '..mime..
+	'\r\n\r\n'..contents..
+	'\r\n--'..boundary..'--\r\n'
+	local colab_url = self.colab_url
+	msg.post(".", "spinner", { case = "analyze_picture" })
+	http.request(colab_url.."/analyze", "POST", handle_analyze_response, headers, body)	
+end
+
+
+-- update the defold texture with the 'webview' one
+local function set_picture(self, texture_id, image_data)
+	if self.texture_id then
+		gui.delete_texture(self.texture_id)
+		self.texture_id = nil
+	end
+
+	local pos = string.find(image_data, ',')
+	local mime = string.sub(image_data, 1, pos-1)
+	mime = string.sub(mime,string.find(mime, ':')+1, string.find(mime, ';')-1)
+	
+	image_data = string.sub(image_data, pos+1) -- remove the DataURI declaration)...
+	local image_bin = base64.decode(image_data)
+	local img = image.load(image_bin)
+	if not img then
+		return
+	end
+
+	if gui.new_texture(texture_id, img.width, img.height, img.type, img.buffer) then
+		self.texture_id = texture_id
+		gui.set_texture(gui.get_node("picture"), texture_id)
+	end
+
+	self.picture_bin = image_bin -- will be used to perform the post request
+	self.picture_mime = mime -- will be used to perform the post request
+end
+
+-- Communication with the webview
+-- Need it to :
+--		- perform an initialization with dedicated parameters (see CALLBACK_RESULT_URL_OK)
+--		- track the eval results launched from the update function (see CALLBACK_RESULT_EVAL_OK)
+local function webview_callback(self, webview_id, request_id, type, data)
+	-- print("webview_callback", webview_id, request_id)
+	if type == webview.CALLBACK_RESULT_URL_OK then
+		-- print("CALLBACK_RESULT_URL_OK")
+		self.initRequest = webview.eval(self.webview_id, string.format("init(%d,%d,%d,%d)", self.reducer_max, self.reducer_unsharpAmount, self.reducer_unsharpRadius, self.reducer_unsharpThreshold))
+	elseif type == webview.CALLBACK_RESULT_URL_ERROR then
+		print("CALLBACK_RESULT_URL_ERROR")
+		print("Failed to load url: " .. tostring(data["url"]))
+		print("Error: " .. tostring(data["error"]))
+
+	elseif type == webview.CALLBACK_RESULT_URL_LOADING then
+		-- print("CALLBACK_RESULT_URL_LOADING")
+		-- a page is loading
+		-- return false to prevent it from loading
+		-- return true or nil to continue loading the page
+		return true
+
+	elseif type == webview.CALLBACK_RESULT_EVAL_OK then
+		-- print("CALLBACK_RESULT_EVAL_OK")
+		-- print("Eval ok. Result: " .. tostring(data['result']))
+		if request_id == self.closeCheckRequest then
+			-- a little trick to decode data sent from a javascript eval call
+			local data_string = data['result']
+			data_string = data_string:gsub("%(", "%{")
+			data_string = data_string:gsub("%)", "%}")
+			data_string = data_string:gsub("    ", "")
+			data_string = data_string:gsub("\n", "")
+			local result = tool.read_exp_list(data_string) -- here result contains the result of the javascript 'getTuple' call !
+
+			if result[1] == true or result[1] == 1 then
+				webview.destroy(self.webview_id)
+				self.webview_id = nil
+				if result[2] == nil then -- cancel have been invoked from the webview
+					msg.post(".", "spinner", { case = "hide" })
+				else -- a new picture is available, need to decode and display it in the defold 'namespace'
+					self.picture_id = path.file(result[2])
+					self.picture_data = result[3]	
+					self.updatePictureRequest = true -- will be performed later, in the update function
+					--print("picture_id=",self.picture_id, "picture_data=", string.sub(self.picture_data, 1, 32).." <...>")
+				end
+			end    
+			self.closeCheckRequest = nil
+		elseif request_id == self.initRequest then
+			if data['result'] == "true" or data['result'] == "1" then -- our webview init has been done, can display it now...
+				webview.set_visible(self.webview_id, 1)
+			end
+		end
+
+	elseif type == webview.CALLBACK_RESULT_EVAL_ERROR then
+		print("CALLBACK_RESULT_EVAL_ERROR")
+		print("Eval not ok. Request # " .. tostring(request_id))
+	else
+		print("Unknown callback type: " .. tostring(type))
+	end
+end
+
+-- allow the user to change the current picture using a 'webview' picker
+local function button_change_picture_callback(self)
+	if not self.webview_id then
+		self.webview_id = webview.create(webview_callback)
+		webview_set_position(self)
+		msg.post(".", "spinner", { case = "change_picture" })
+		local page_html = sys.load_resource("/assets/res/www/index.html")
+		webview.open_raw(self.webview_id, page_html, {hidden = true})
+	end
+end
+
+-- some functions to check the connection with the current colab server
+-- a simple led animation used to display the status connection
+local function set_led_status(self, value)
+	if value ~= self.led_status then
+		self.led_status = value
+		gui.cancel_animation(gui.get_node("led_status/led"), gui.PROP_COLOR)
+		if self.led_status then
+			gui.set_color(gui.get_node("led_status/led"), vmath.vector4(1, 1, 1, 1)) 
+			gui.animate(gui.get_node("led_status/led"), gui.PROP_COLOR, vmath.vector4(0, 1, 0, 1), go.EASING_OUTEXPO, 1.5, 0, nil, gui.PLAYBACK_LOOP_FORWARD)			
+		else
+			gui.set_color(gui.get_node("led_status/led"), vmath.vector4(1, 0, 0, 1)) 
+		end
+	end
+end
+
+-- call a dedicated endpoint to know if the colab server is still active
+local handle_http_response -- forward declaration !o)
+local function start_check_colab_connection(self)
+	self.colab_check_timer = timer.delay(0.5, true, function(self, id, time_elapsed)
+		http.request(self.colab_url.."/ping", "GET", handle_ping_response, nil, nil, {timeout=3})
+	end)
+end
+
+local function stop_check_colab_connection(self)
+	timer.cancel(self.colab_check_timer)
+end
+
+local function colab_is_connected(self, value)
+	if value ~= self.colab_connected then
+		if value == true then
+			print("Connected to colab !")
+			set_led_status(self, true)
+		else
+			print("Disconnected from colab!")
+			set_led_status(self, false)
+		end
+		self.colab_connected =value
+	end
+end
+
+handle_ping_response = function(self, id, response)
+	if response.status == 200 then
+		local info = json.decode(response.response)
+		if info["result"] == "pong" then -- good response ;o)
+			colab_is_connected(self, true)
+		end 
+		defsave.set("preferences", "colab_url", self.colab_url)
+	else
+		stop_check_colab_connection(self)
+		colab_is_connected(self, false)
+		defsave.set("preferences", "colab_url", nil)
+
+		if self.fallback_open_scan_page then
+			self.fallback_open_scan_page = false
+			msg.post(".", "show_scan")
+		end
+	end
+end
+
+-- change the url to the current colab server
+local function set_colab_url(self, url)
+	self.colab_url = url
+	self.colab_connected = false
+	start_check_colab_connection(self) -- start checking the connection
+end
+
+
+-- init
+function init(self)
+	-- check if webview is available, it's a prerequisite !
+	if not webview then 
+		print("WebView is not available (only available on iOS and Android).")
+		return 
+	end
+
+	-- defsave 
+	defsave.appname = "defold-colab"
+	defsave.autosave = true
+	defsave.load("preferences")
+
+	-- druid init
+	druid.set_default_style(default_style)
+	self.druid = druid.new(self)
+	window.set_listener(on_window_callback)
+
+	-- buttons widget creation, need to store them
+	self.buttons = {}
+	table.insert(self.buttons, self.druid:new_button("button_colab/button", button_colab_callback))
+	table.insert(self.buttons, self.druid:new_button("button_change_picture/button", button_change_picture_callback))
+	table.insert(self.buttons, self.druid:new_button("button_analyze_picture/button", button_analyze_picture_callback))
+	-- text widget creation
+	self.results = self.druid:new_text("results")
+	self.results:set_pivot(gui.PIVOT_NW)
+	self.results:set_to("")
+	msg.post("@render:", "use_fixed_fit_projection", { near = -1, far = 1 })
+
+	-- spinner initialization
+	self.t = 0
+	self.spinner_speed = 16 --per second
+	self.spinner_status = nil
+	self.spinner_case = nil
+
+	msg.post(".", "spinner", { case = "hide" })
+
+	-- picture reducer parameters initialization (used for webview)
+	self.reducer_max = 400
+	self.reducer_unsharpAmount = 80
+	self.reducer_unsharpRadius = 0.6
+	self.reducer_unsharpThreshold = 2
+	
+	-- webview parameters
+	self.closeCheckRequest = nil
+	self.initRequest = nil
+	self.updatePictureRequest = false
+	self.picture_id = nil
+	self.picture_data = nil
+	self.picture_bin = nil
+	self.picture_mime = nil
+
+	-- collab stuff initialization
+	self.colab_url = ""
+	self.colab_connected = false
+	self.led_status = nil
+	set_led_status(self, false)
+	self.fallback_open_scan_page = false
+	local previous_colab_url = defsave.get("preferences", "colab_url")
+	if previous_colab_url ~= nil and previous_colab_url ~= "" then
+		self.fallback_open_scan_page = true 
+		set_colab_url(self, previous_colab_url)
+	else
+		msg.post(".", "show_scan")
+	end
+end
+
+-- final
+function final(self)
+	self.druid:final()
+	defsave.save_all()
+end
+
+-- update
+function update(self, dt)
+	self.druid:update(dt)
+	defsave.update(dt)
+	-- need to update the spinner ?
+	if self.spinner_status == true then
+		self.t = self.t + dt
+		local step = math.floor(self.t * self.spinner_speed)
+		local angle = math.pi /6 * step
+		local rot = vmath.quat_rotation_z(-angle)
+		gui.set_rotation(gui.get_node("spinner"), rot)
+	end
+	-- need to communicate to the webview ?
+	if self.webview_id and not self.closeCheckRequest then
+		self.closeCheckRequest = webview.eval(self.webview_id, "getTuple()")
+		--print("self.closeCheckRequest=",self.closeCheckRequest)
+	end
+	-- need to update the current picture ?
+	if self.updatePictureRequest then
+		set_picture(self, self.picture_id, self.picture_data)  
+		self.picture_data = nil   
+		self.results:set_to("")  
+		self.updatePictureRequest = false
+		msg.post(".", "spinner", { case = "hide" })
+	end
+end
+
+-- on_message
+function on_message(self, message_id, message, sender)
+	self.druid:on_message(message_id, message, sender)
+	-- spinner management, one spinner for all uses
+	if message_id == hash("spinner") then
+		local case = message.case
+		if case=="hide" then -- hide it !
+			for _, button in pairs(self.buttons) do
+				button:set_enabled(true)
+			end
+			gui.set_enabled(gui.get_node("gray"), false)
+			gui.set_enabled(gui.get_node("spinner"), false)
+			self.spinner_status = false
+		elseif case=="change_picture" then -- show it under the 'picture' node
+			for _, button in pairs(self.buttons) do
+				button:set_enabled(false)
+			end
+			gui.set_parent(gui.get_node("spinner"), gui.get_node("picture"))
+			gui.set_enabled(gui.get_node("gray"), true)
+			gui.set_enabled(gui.get_node("spinner"), true)
+			self.spinner_status = true
+		elseif case=="analyze_picture" then -- show it under the 'text_results_area' node
+			gui.set_parent(gui.get_node("spinner"), gui.get_node("text_results_area"))
+			gui.set_enabled(gui.get_node("spinner"), true)
+			self.spinner_status = true
+		end
+		self.spinner_case = case
+	elseif message_id == hash("show_scan") then
+		monarch.show("scan")
+	elseif message_id == monarch.FOCUS.GAINED then
+		local data = monarch.data("screen")
+		if message.id==hash("scan") and data and data['url'] then
+			set_colab_url(self, data['url'])
+		end
+	end	
+end
+
+-- on_input
+function on_input(self, action_id, action)
+	self.druid:on_input(action_id, action)
+end
+

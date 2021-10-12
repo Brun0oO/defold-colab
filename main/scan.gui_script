@@ -1,0 +1,101 @@
+local monarch = require("monarch.monarch")
+local druid = require("druid.druid")
+
+local function button_cancel_scan_callback(self)
+    monarch.back()
+end
+
+function init(self)
+    gui.set_render_order(15)
+    
+    self.screen_width = sys.get_config("display.width", 600)
+    self.screen_height = sys.get_config("display.height", 800)
+    
+    self.druid = druid.new(self)
+
+    self.druid:new_button("button_cancel_scan/button", button_cancel_scan_callback)
+
+    self.status = self.druid:new_text("text_status", "")
+    self.qrcode = self.druid:new_text("text_qrcode", "")
+    
+    local bg = gui.get_node("background")
+    gui.set_size(bg, vmath.vector3(self.screen_width, self.screen_height, 0))
+    
+    self.cameranode = gui.get_node("camera")
+    self.url = ""
+    self.result_is_pending = false
+    self.waiting_timer = nil
+    self.connecting_timer = nil
+end
+
+function final(self)
+    self.druid:final()
+end
+
+function update(self, dt)
+    self.druid:update(dt)
+end
+
+
+
+local function handle_http_response(self, id, response)
+    if response.status == 200 then
+        local info = json.decode(response.response)
+        if info["result"] == "pong" then
+            self.qrcode:set_to("Valid QRCode !")
+            self.connecting_timer = timer.delay(0.5, false, function(self, id, time_elapsed)
+                self.qrcode:set_to("Connecting...")             
+                self.connecting_timer = timer.delay(0.5, false, function(self, id, time_elapsed)
+                    self.connecting_timer = nil
+                    monarch.back({url=self.url})
+                end)
+            end)
+            print("Yep !")
+        end 
+    else
+        self.waiting_timer = timer.delay(0.5, false, function(self, id, time_elapsed)
+            self.qrcode:set_to("Invalid QRCode !")
+            self.waiting_timer = timer.delay(2, false, function(self, id, time_elapsed)
+                self.qrcode:set_to("")
+                self.waiting_timer = nil
+            end)
+        end)
+        print("Nop !")     
+    end
+    self.result_is_pending = false
+end
+
+
+
+function on_message(self, message_id, message, sender)
+    self.druid:on_message(message_id, message, sender)
+    
+    if message_id == hash("camera_on") then
+        local width = self.screen_width*0.75
+        local height = width*message.height/message.width
+        gui.set_size(self.cameranode, vmath.vector3(width, height, 0))
+        self.status:set_to("Capture Status : ON")
+        
+    elseif message_id == hash("camera_off") then
+        self.status:set_to("Capture Status : OFF")
+        
+    elseif message_id == hash("camera_err") then
+        self.status:set_to("Capture Status : ERROR")
+        
+    elseif message_id == hash("qrcode") then
+        if self.waiting_timer == nil and self.connecting_timer == nil then
+            if not self.result_is_pending then
+                self.qrcode:set_to("Waiting...")
+                self.result_is_pending = true
+                self.url = message.value
+                self.qrcode:set_to(self.url)
+                http.request(self.url.."/ping", "GET", handle_http_response, nil, nil, {timeout=3})
+            end
+        end
+    end
+end
+
+function on_input(self, action_id, action)
+    self.druid:on_input(action_id, action)
+end
+
