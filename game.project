@@ -4,11 +4,11 @@ custom_resources = /assets/res
 dependencies#0 = https://github.com/Insality/druid/archive/master.zip
 dependencies#1 = https://github.com/defold/extension-webview/archive/master.zip
 dependencies#2 = https://github.com/britzl/monarch/archive/master.zip
-dependencies#3 = https://github.com/defold/extension-qrcode/archive/1.1.zip
-dependencies#4 = https://github.com/defold/extension-camera/archive/master.zip
-dependencies#5 = https://github.com/selimanac/defold-uuid4/archive/master.zip
-dependencies#6 = https://github.com/britzl/defold-png/archive/master.zip
-dependencies#7 = https://github.com/subsoap/defsave/archive/master.zip
+dependencies#3 = https://github.com/defold/extension-camera/archive/master.zip
+dependencies#4 = https://github.com/selimanac/defold-uuid4/archive/master.zip
+dependencies#5 = https://github.com/britzl/defold-png/archive/master.zip
+dependencies#6 = https://github.com/subsoap/defsave/archive/master.zip
+dependencies#7 = https://github.com/Brun0oO/extension-qrcode/archive/refs/tags/1.2.zip
 
 [bootstrap]
 main_collection = /main/main.collectionc

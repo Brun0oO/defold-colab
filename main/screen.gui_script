@@ -9,7 +9,7 @@ local defsave = require("defsave.defsave")
 
 
 local function webview_set_position(self)
-	webview.set_position(self.webview_id, 0, 0, -1, 40)
+	webview.set_position(self.webview_id, 0, 0, -1, 80)
 end
 
 local function on_window_callback(self, event, data)
