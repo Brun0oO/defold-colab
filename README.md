@@ -17,7 +17,7 @@ The purpose of this project is to :
 **Notes:**
 
 The colab notebook is available here :
-<a href="https://colab.research.google.com/github/Brun0oO/Colab/blob/main/fastapi_colab_jprq.ipynb" target="_parent"><img src="https://camo.githubusercontent.com/52feade06f2fecbf006889a904d221e6a730c194/68747470733a2f2f636f6c61622e72657365617263682e676f6f676c652e636f6d2f6173736574732f636f6c61622d62616467652e737667" alt="Open In Colab" data-canonical-src="https://colab.research.google.com/assets/colab-badge.svg"></a>
+<a href="https://colab.research.google.com/github/Brun0oO/Colab/blob/main/colab_fastapi_localtunnel_basic.ipynb" target="_parent"><img src="https://camo.githubusercontent.com/52feade06f2fecbf006889a904d221e6a730c194/68747470733a2f2f636f6c61622e72657365617263682e676f6f676c652e636f6d2f6173736574732f636f6c61622d62616467652e737667" alt="Open In Colab" data-canonical-src="https://colab.research.google.com/assets/colab-badge.svg"></a>
     
 There is not so much ambition in this colab notebook, apart from offering web services through [localtunnel](https://theboroer.github.io/localtunnel-www/) (a free and open-source Ngrok alternative) in order to communicate with this defold application (we just return the dimensions of the given image as a service), it's already not so bad...
 
